@@ -41,6 +41,9 @@ android-port.md   安卓 WebView 移植笔记
 
 ## 改的时候
 
+- **main 是保护分支**:改动走 PR,至少 1 个 review、CI(check / privacy 两关)过了才能合;
+  force push 和删分支都挡着。仓库 owner 能绕过,但别绕。
+
 - **一个 PR 一件事**,尽量小。改的是 `draw.js` 就别顺手重排 `calc.js`。
 - 提交信息用 Conventional Commits:`feat(draw): 加风向箭头`、`fix(api): 待发场次返回空`。
   别人(和人之外的接手者)靠 `git log` 判断发生了什么。
