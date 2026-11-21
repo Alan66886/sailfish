@@ -1,0 +1,11 @@
+# 构建产物:谁要谁自己打(python3 tools/build_standalone.py)
+dist/
+# 抓来的赛事原始数据(102MB,是赛事方的,不进仓库)
+data/
+# 从别人小程序里解包出来的代码,别公开
+miniapp/
+__pycache__/
+*.pyc
+.DS_Store
+*.log
+node_modules/
