@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: JS 语法
+        run: for f in viewer/js/*.js; do node --check "$f"; done
+
+      - name: 单文件包还能打出来
+        run: python3 tools/build_standalone.py --out /tmp/t.html
+
+      - name: Python 语法
+        run: python3 -m py_compile tools/*.py viewer/server.py
+
+  privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 不许出现真实路径 / 内网地址 / 密钥
+        run: |
+          if grep -rnEi 'wuyuhan|/Users/[a-z]|192\.168\.[0-9]+\.|10\.[0-9]+\.[0-9]+\.[0-9]+|ghp_|github_pat_|BEGIN (RSA|OPENSSH)|api[_-]?key' \
+               --include='*.py' --include='*.js' --include='*.html' --include='*.md' --include='*.json' .; then
+            echo "::error::上面这些要改成占位符"
+            exit 1
+          fi
