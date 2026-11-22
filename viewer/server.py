@@ -4,7 +4,7 @@
   python3 viewer/server.py           # http://127.0.0.1:8899/
   python3 viewer/server.py 9000      # 换端口
 
-接口(都是本地的,只读,不写任何东西):
+赛事接口只读；AI分析仅在用户手动提交时调用外部模型:
   GET /                      前端页面
   GET /app.js
   GET /api/races[?eventCd=]  赛事各组当前那一场(标出哪个在跑 / 哪个待发)
@@ -13,10 +13,13 @@
   GET /api/replays           本地 data/ 里已经抓下来的比赛(赛后回放用)
   GET /api/replay?raceCd=&step=  一整场抽样后的轨迹(默认 3 秒一帧),给前端拖动时间轴
   GET /api/health
+  GET /api/coach/status       AI配置状态与同源会话令牌
+  POST /api/coach/analyze     仅提交匿名聚合统计,需要同源会话令牌
 """
 import json
 import os
 import re
+import secrets
 import socket
 import sys
 import time
@@ -25,8 +28,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "tools"))
 from lzstring import decompress_from_base64      # noqa: E402
+from ai_coach import CoachError, CoachService, REQUEST_LIMIT, parse_request  # noqa: E402
 
 RACE_API = "https://www.saill.cn/sf-admin/api/app-api/match/race"
 FRONT_API = "https://www.saill.cn/sf-front-api/api"
@@ -34,6 +39,7 @@ HDR = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 DEFAULT_EVENT = "scf1fea990ea3649999c6686076b54286b"   # 2026 第八届粤港澳大湾区帆船赛
 DATA = os.path.join(os.path.dirname(HERE), "data")
 FL = {10: "spd", 16: "hdg", 17: "lat", 18: "lng", 22: "ts"}
+COACH = CoachService()
 
 
 def http_json(url, payload=None, timeout=15):
@@ -204,19 +210,101 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("%s  %s\n" % (time.strftime("%H:%M:%S"), fmt % args))
 
-    def _json(self, obj, code=200):
+    def _json(self, obj, code=200, cors=True):
         body = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")   # 手机上的单文件 html 要跨过来拿数据
+        if cors:
+            self.send_header("Access-Control-Allow-Origin", "*")   # 手机上的单文件 html 要跨过来拿赛事数据
+        else:
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
+    def _coach_access(self, require_origin=False):
+        # 限定当前本机地址，避免第三方域名重绑定到本地后读取会话令牌。
+        if len(self.headers.get_all("Host", [])) != 1 or len(self.headers.get_all("Origin", [])) > 1:
+            raise CoachError("AI分析只接受当前页面的同源请求。", 403)
+        try:
+            host = urlparse("http://" + self.headers["Host"])
+            local_address, local_port = self.connection.getsockname()[:2]
+            local_hosts = {local_address.lower()}
+            if local_address.startswith("127.") or local_address == "::1":
+                local_hosts.add("localhost")
+            if (host.hostname not in local_hosts or (host.port or 80) != local_port
+                    or host.username or host.password or host.path or host.query or host.fragment):
+                raise ValueError("invalid host")
+            origin_value = self.headers.get("Origin")
+            if require_origin and not origin_value:
+                raise ValueError("missing origin")
+            if origin_value:
+                origin = urlparse(origin_value)
+                if (origin.scheme != "http" or origin.hostname != host.hostname
+                        or (origin.port or 80) != (host.port or 80)
+                        or origin.username or origin.password or origin.path or origin.query or origin.fragment):
+                    raise ValueError("different origin")
+        except (ValueError, AttributeError):
+            raise CoachError("AI分析只接受当前页面的同源请求。", 403) from None
+        if self.headers.get("Sec-Fetch-Site", "").lower() not in ("", "same-origin", "none"):
+            raise CoachError("AI分析不接受跨站请求。", 403)
+        if self.headers.get("Sec-Fetch-Mode", "").lower() == "no-cors":
+            raise CoachError("AI分析不接受跨站请求。", 403)
+
+    def _coach_status(self):
+        try:
+            self._coach_access()
+            return self._json(COACH.status(), cors=False)
+        except CoachError as e:
+            return self._json({"error": str(e)}, e.status, cors=False)
+
+    def do_POST(self):
+        if urlparse(self.path).path != "/api/coach/analyze":
+            return self._json({"error": "不支持这个接口。"}, 404, cors=False)
+        try:
+            self._coach_access(require_origin=True)
+            tokens = self.headers.get_all("X-Coach-Token", [])
+            if len(tokens) != 1 or not secrets.compare_digest(tokens[0], COACH.token):
+                raise CoachError("会话已失效，请刷新当前页面。", 403)
+            if not COACH.status()["configured"]:
+                raise CoachError("服务端尚未配置AI凭证和模型。", 503)
+            if (self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+                    != "application/json"):
+                raise CoachError("请提交JSON格式的匿名统计。", 415)
+            sizes = self.headers.get_all("Content-Length", [])
+            if self.headers.get("Transfer-Encoding") or len(sizes) != 1 or not sizes[0].isdigit():
+                raise CoachError("请求需要有效的内容长度。", 411)
+            length = int(sizes[0])
+            if length > REQUEST_LIMIT:
+                raise CoachError("摘要请求不能超过32KB。", 413)
+            previous_timeout = self.connection.gettimeout()
+            try:
+                self.connection.settimeout(5)
+                raw = self.rfile.read(length)
+            except (TimeoutError, OSError):
+                raise CoachError("读取摘要超时，请重试。", 408) from None
+            finally:
+                self.connection.settimeout(previous_timeout)
+            if len(raw) != length:
+                raise CoachError("摘要请求不完整。")
+            result = COACH.analyze(parse_request(raw))
+            return self._json(result, cors=False)
+        except CoachError as e:
+            return self._json({"error": str(e)}, e.status, cors=False)
+        except Exception:
+            # 不能把供应商响应、凭证或用户摘要拼进错误或日志。
+            return self._json({"error": "分析暂时无法完成，请稍后重试。"}, 502, cors=False)
+
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if u.path == "/api/coach/status":
+            return self._coach_status()
+        if u.path.startswith("/api/coach/"):
+            return self._json({"error": "不支持这个接口或请求方式。"}, 405, cors=False)
         try:
             if u.path == "/api/health":
                 return self._json({"ok": True, "t": int(time.time() * 1000)})

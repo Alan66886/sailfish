@@ -3,7 +3,9 @@
 /* ---------- 起 ---------- */
 resize();
 draw();
+showScreen('race');
 loadRaces();
 setInterval(() => {
-  el('clock').textContent = '更新 ' + fmtTime(S.lastMeta) + ' · ' + S.polls + ' 次';
+  el('clock').textContent = '接口拉取 ' + fmtTime(S.lastMeta) + ' · ' + S.polls + ' 次';
+  refreshAppReadouts();
 }, 1000);

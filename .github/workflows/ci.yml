@@ -18,11 +18,17 @@ jobs:
       - name: JS 语法
         run: for f in viewer/js/*.js; do node --check "$f"; done
 
+      - name: 航行计算与数据录制
+        run: node --test tests/*.test.cjs
+
+      - name: AI接口与摘要校验
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
       - name: 单文件包还能打出来
         run: python3 tools/build_standalone.py --out /tmp/t.html
 
       - name: Python 语法
-        run: python3 -m py_compile tools/*.py viewer/server.py
+        run: python3 -m py_compile tools/*.py viewer/*.py
 
   privacy:
     runs-on: ubuntu-latest
@@ -32,7 +38,7 @@ jobs:
       - name: 不许出现真实路径 / 内网地址 / 密钥
         run: |
           if grep -rnEi 'wuyuhan|/Users/[a-z]|192\.168\.[0-9]+\.|10\.[0-9]+\.[0-9]+\.[0-9]+|ghp_|github_pat_|BEGIN (RSA|OPENSSH)|api[_-]?key' \
-               --include='*.py' --include='*.js' --include='*.html' --include='*.md' --include='*.json' .; then
+               --include='*.py' --include='*.js' --include='*.cjs' --include='*.html' --include='*.md' --include='*.json' .; then
             echo "::error::上面这些要改成占位符"
             exit 1
           fi

@@ -8,10 +8,12 @@ async function poll() {
   const t0 = performance.now();
   try {
     const res = await getJSON('/api/snap?raceCd=' + encodeURIComponent(cd));
+    if (gen !== S.gen) return;
     S.errors = 0;
     ingest(res.data || {}, res.t);
     setPill(el('err'), null);
   } catch (e) {
+    if (gen !== S.gen) return;
     S.errors++;
     setPill(el('err'), '拉数据失败 ×' + S.errors);
     el('err').style.display = '';
@@ -90,16 +92,18 @@ function ingest(d, now) {
     if (!h) { h = []; S.hist.set(key, h); }
     const last = h[h.length - 1];
     if (!last || (dv.ts && last.t !== dv.ts)) {
-      h.push({ t: dv.ts || now, x: p.x, y: p.y });
+      h.push({ t: dv.ts || now, x: p.x, y: p.y, timed: Number.isFinite(dv.ts) && dv.ts > 0 });
       while (h.length && h[0].t < cut) h.shift();
     }
   }
 
   S.data = d; S.lastMeta = now;
+  captureCoachSample(nowMs());
   showMsg(S.dev.size ? ''
     : (String(d.status) === '99' ? '这一场已经比完了,实时数据不给了 — 换个没比完的场次' : '这一场暂时没有位置数据'));
   updateHeader(d, wind);
   updateList();
+  updateBoatPicker();
 }
 
 function updateHeader(d, wind) {
@@ -112,11 +116,8 @@ function updateHeader(d, wind) {
   else if (st === 99) { pill.textContent = '已结束'; pill.className = 'pill over'; }
   else if (st === undefined || st === null) { pill.textContent = '?'; pill.className = 'pill'; }
   else { pill.textContent = '进行中'; pill.className = 'pill run'; }
-  el('clock').textContent = '更新 ' + fmtTime(S.lastMeta) + ' · ' + S.polls + ' 次';
-  el('windTxt').textContent = wind
-    ? `风 ${wind.from === null ? '—' : wind.from.toFixed(0) + '°'}/` +
-      `${wind.spd === null ? '—' : (wind.spd * KNOT).toFixed(1) + ' kn'}`
-    : '风 —';
+  el('clock').textContent = '接口拉取 ' + fmtTime(S.lastMeta) + ' · ' + S.polls + ' 次';
+  updateMapWeather(nowMs());
   // 顺带补一下比赛列表里的状态(第一次拉到实时数据就知道了)
   if (S.race && S.race.status !== st) {
     S.race.status = st;

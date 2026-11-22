@@ -1,146 +1,432 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="day">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1116">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>帆船赛实时图</title>
 <style>
-  :root{
-    --bg:#0b1116; --sea:#0e2b33; --line:#1d3a44; --ink:#dfeef2; --dim:#7f99a1;
-    --boat:#ffd166; --mark:#5ad1a0; --wind:#6fb3ff; --pred:#ff7b6b; --stale:#5a6b70;
+  :root,html[data-theme="day"]{
+    color-scheme:light;
+    --bg:#edf3f6;--panel:#ffffff;--ink:#102d3c;--dim:#496373;--line:#bdced7;
+    --accent:#006b57;--danger:#b42318;--sea:#eaf4f8;--surface:#f1f6f8;
+    --boat:#925800;--mark:#00775d;--wind:#1557a6;--pred:#b3431d;--stale:#667b87;
+    --accent-soft:#e0f4ec;--warning:#795200;--shadow:0 3px 14px #163c4b1a;
+  }
+  html[data-theme="night"]{
+    color-scheme:dark;
+    --bg:#071923;--panel:#0e2838;--ink:#f2faff;--dim:#afc5d1;--line:#365563;
+    --accent:#52e2b5;--danger:#ffa596;--sea:#0c2b3b;--surface:#143545;
+    --boat:#ffe19a;--mark:#61e1b7;--wind:#91c6ff;--pred:#ffae83;--stale:#8195a0;
+    --accent-soft:#163e3c;--warning:#ffe19a;--shadow:0 4px 18px #0005;
   }
   *{box-sizing:border-box}
+  [hidden]{display:none!important}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
-    font:13px/1.45 -apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;
-    -webkit-text-size-adjust:100%;overscroll-behavior:none}
+    font:16px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;overscroll-behavior:none}
   body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
-
-  /* 顶栏:桌面一行摆开;手机只留比赛名 + 状态,其余收进 ⚙ 面板 */
-  #top{position:relative;flex:0 0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
-    padding:8px 12px;border-bottom:1px solid var(--line);background:#0d151b;
-    padding-top:calc(8px + env(safe-area-inset-top))}
-  #top b{font-size:14px;font-weight:600;white-space:nowrap}
-  #ctrls{display:contents}
-  .pill{padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim);
-    font-size:12px;white-space:nowrap}
-  .pill.run{color:#0b1116;background:#5ad1a0;border-color:#5ad1a0}
-  .pill.wait{color:#0b1116;background:#ffd166;border-color:#ffd166}
-  .pill.over{color:#0b1116;background:#7f99a1;border-color:#7f99a1}
-  .pill.bad{color:#0b1116;background:#ff7b6b;border-color:#ff7b6b}
-  select,button{background:#13212a;color:var(--ink);border:1px solid var(--line);
-    border-radius:6px;padding:4px 8px;font:inherit;max-width:100%}
-  button{cursor:pointer;-webkit-tap-highlight-color:transparent}
-  button:hover,select:hover{border-color:#2b5664}
-  button:active{background:#1a2e39}
-  main{position:relative;flex:1 1 auto;min-height:0;overflow:hidden}
+  button,select,input{font:inherit;color:var(--ink)}
+  button,select,.num{min-height:48px;border:1px solid var(--line);border-radius:12px;
+    background:var(--panel);padding:10px 12px;max-width:100%}
+  button{cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;font-weight:600}
+  button:hover,select:hover{border-color:var(--accent)}
+  button:active{background:var(--accent-soft)}
+  button:disabled{opacity:.48;cursor:not-allowed}
+  button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+  button svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+  button.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+  html[data-theme="night"] button.primary{color:#06281f}
+  .icon-button{display:flex;align-items:center;justify-content:center;flex:0 0 48px;width:48px;padding:10px}
+  .muted{color:var(--dim)}
+  .eyebrow{color:var(--dim);font-size:13px;font-weight:600;letter-spacing:.02em}
+  .pill{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
+    padding:4px 9px;border-radius:99px;background:var(--surface);border:1px solid var(--line);
+    color:var(--dim);font-size:13px;font-weight:700;white-space:nowrap}
+  .pill.run{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}
+  .pill.wait{color:var(--warning);border-color:var(--warning)}
+  .pill.bad{color:var(--danger);border-color:var(--danger)}
+  .pill.over{color:var(--dim)}
+  #top{position:relative;z-index:10;flex:0 0 auto;background:var(--panel);border-bottom:1px solid var(--line);
+    padding:8px 16px 10px;padding-top:calc(8px + env(safe-area-inset-top))}
+  .top-race-row{display:flex;align-items:center;gap:8px;min-width:0}
+  .race-heading{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+  #race{font-size:16px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .top-actions{display:flex;gap:6px;flex-shrink:0}
+  .top-actions .icon-button{border-color:transparent;background:var(--surface)}
+  .top-boat-row{display:flex;align-items:center;gap:10px;margin-top:6px;min-width:0}
+  .boat-picker{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+  #deckBoat{flex:0 0 auto;color:var(--dim);font-size:13px;font-weight:600}
+  #boatSel{flex:1;width:100%;min-width:0;max-width:420px;font-weight:700;padding:9px 12px;background:var(--surface)}
+  #deckFresh{flex:0 0 auto;color:var(--dim);font-size:13px;max-width:105px;text-align:right;line-height:1.3}
+  #deckFresh.stale{color:var(--danger);font-weight:700}
+  #mapDataState{margin-top:8px;padding:7px 10px;border:1px solid var(--warning);border-radius:8px;
+    font-size:13px;line-height:1.45;color:var(--warning);background:var(--surface)}
+  #err{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:20;
+    max-width:calc(100% - 32px);white-space:normal;background:var(--panel);box-shadow:var(--shadow)}
+  #mapStage{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;background:var(--sea)}
   canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
   canvas.drag{cursor:grabbing}
-  #hud{position:absolute;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));
-    display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;max-width:calc(100% - 20px);
-    font-size:12px;color:var(--dim);pointer-events:none}
-  #hud .k{color:var(--ink)}
-  #hud .hint{opacity:.7}
-  #list{position:absolute;right:12px;top:12px;width:270px;max-height:calc(100% - 24px);
-    overflow:auto;background:#0d151bcc;border:1px solid var(--line);border-radius:8px;
-    padding:8px 10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-  #list h4{margin:2px 0 6px;font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.04em}
-  .row{display:grid;grid-template-columns:10px 1fr auto auto;gap:6px;align-items:center;
-    padding:3px 0;border-bottom:1px dashed #16282f;font-size:12px}
+  body:not([data-screen="race"]):not([data-screen="start"]) #mapStage{display:none}
+  .map-wind{position:absolute;left:14px;top:14px;max-width:calc(100% - 90px);padding:10px 13px;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);pointer-events:none}
+  .map-wind .eyebrow{display:block;margin-bottom:2px}
+  #windTxt{display:block;color:var(--ink);font-size:18px;font-weight:750;font-variant-numeric:tabular-nums}
+  #mapWindState{display:block;color:var(--dim);font-size:13px;margin-top:2px}
+  .map-actions{position:absolute;right:14px;top:14px;display:flex;flex-direction:column;gap:10px}
+  .map-actions button{width:48px;height:48px;background:var(--panel);box-shadow:var(--shadow)}
+  #mapLocate[aria-pressed="true"]{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  #hud{position:absolute;left:14px;bottom:52px;pointer-events:none;display:flex;align-items:center;
+    color:var(--ink);font-size:13px;font-weight:600;padding:5px 9px;border-radius:8px;background:var(--panel);border:1px solid var(--line)}
+  .map-credits{position:absolute;left:0;right:0;bottom:0;text-align:right;
+    font-size:13px;line-height:1.4;color:#173c46;background:#fffffff2;padding:4px 8px}
+  .map-credits a{color:#173c46;text-decoration:none}
+  #mapBaseState{display:inline;font-weight:600;margin-right:6px}
+  #mapBaseState:empty{display:none}
+  .source-link{display:inline-block;color:var(--accent);min-height:48px;padding:12px 0;font-weight:600}
+  #msg{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);color:var(--dim);
+    text-align:center;line-height:1.7;padding:12px 18px;width:max-content;max-width:calc(100% - 36px);
+    border-radius:12px;background:var(--panel);box-shadow:var(--shadow);pointer-events:none}
+  #msg:empty{display:none}
+  #bias{display:none;position:absolute;left:14px;right:76px;top:108px;max-height:38%;overflow:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;
+    color:var(--dim);line-height:1.7;box-shadow:var(--shadow)}
+  body.analysis-open #bias{display:block}
+  #bias b{color:var(--ink);font-weight:700}
+  #bias .fav{color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 5px;font-weight:700}
+  #bias .dn{color:var(--danger)}
+  #bias .sep{color:var(--line);margin:0 6px}
+  #raceDeck{display:none;flex:0 0 auto;padding:16px 18px 10px;background:var(--panel);border-top:1px solid var(--line)}
+  body[data-screen="race"] #raceDeck{display:block}
+  .metric-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .metric{min-width:0}
+  .metric+.metric{border-left:1px solid var(--line);padding-left:14px}
+  .metric-label{display:block;color:var(--dim);font-size:14px;font-weight:600;line-height:1.35;margin-bottom:5px}
+  .metric strong{font-size:40px;font-weight:760;line-height:1.08;font-variant-numeric:tabular-nums;letter-spacing:-.035em}
+  .metric .unit{display:inline-block;color:var(--dim);font-size:13px;font-weight:600;margin-left:4px}
+  .metric.prediction strong{color:var(--accent)}
+  #deckNote{margin:10px 0 0;color:var(--dim);font-size:13px;line-height:1.4}
+  #startAssist{display:none;flex:0 0 auto;max-height:58dvh;overflow:auto;overscroll-behavior:contain;
+    padding:14px 18px;background:var(--panel);border-top:1px solid var(--line)}
+  body[data-screen="start"] #startAssist{display:block}
+  .start-readouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .start-readout{min-width:0}
+  .start-readout strong{display:block;font-size:36px;font-weight:760;line-height:1.1;letter-spacing:-.035em;
+    font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+  #startCountdown{color:var(--accent)}
+  #startEta,#startDelta{font-size:clamp(23px,6.8vw,32px);white-space:nowrap;overflow-wrap:normal}
+  #startDelta[data-state="early"]{color:var(--danger)}
+  #startDelta[data-state="late"]{color:var(--wind)}
+  #startDelta[data-state="near"]{color:var(--accent)}
+  .start-assist-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+  #startToggle{display:flex;align-items:center;gap:8px;min-height:48px;padding:8px 0;background:none;border:0;color:var(--accent)}
+  #startToggle::after{content:"⌄";font-size:20px;transition:transform .15s}
+  #startToggle[aria-expanded="true"]::after{transform:rotate(180deg)}
+  #startSummary{min-width:0;color:var(--dim);font-size:13px;text-align:right;overflow-wrap:anywhere}
+  #startControls{display:none;padding:10px 0 2px;border-top:1px solid var(--line)}
+  #startAssist.open #startControls{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .start-direction{grid-column:1/-1;display:flex;align-items:center;gap:12px;color:var(--dim);font-size:14px}
+  #startDirection{flex:1;min-width:0}
+  .start-calibration,.start-adjustments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  #startControls button{padding:10px 6px;font-size:14px;white-space:nowrap}
+  .start-calibration button{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  #startHint{margin:8px 0 0;font-size:13px;line-height:1.5;color:var(--dim)}
+  #mobileNav{flex:0 0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;
+    padding:5px 10px calc(5px + env(safe-area-inset-bottom));background:var(--panel);border-top:1px solid var(--line)}
+  #mobileNav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    min-width:0;min-height:58px;padding:5px 3px;border:1px solid transparent;border-radius:12px;background:transparent;color:var(--dim);font-size:14px}
+  #mobileNav button.active,#mobileNav button[aria-current="page"]{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}
+  .app-page{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;padding:22px 18px 28px;background:var(--bg)}
+  .page-inner{width:100%;max-width:960px;margin:0 auto}
+  .page-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 18px}
+  .page-heading h1{margin:0;font-size:24px;font-weight:750;line-height:1.3}
+  .page-heading p{margin:5px 0 0;color:var(--dim);font-size:14px}
+  .page-heading button{flex:0 0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px}
+  .card h2,.coach-card h3,.control-title{font-size:18px;font-weight:750;margin:0 0 14px;line-height:1.3;color:var(--ink)}
+  .card h3{font-size:16px;margin:0 0 12px}
+  .card-note{margin:12px 0 0;font-size:13px;line-height:1.55;color:var(--dim);overflow-wrap:anywhere}
+  .quick-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .quick-grid button{display:flex;align-items:center;justify-content:flex-start;gap:10px;min-height:58px;text-align:left;background:var(--panel)}
+  .control-group{padding:18px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .control-group:first-of-type{border-top:0;padding-top:0}
+  .control-title{grid-column:1/-1;font-size:16px;margin:0}
+  .field{display:flex;flex-direction:column;align-items:stretch;gap:7px;color:var(--dim);font-size:14px;min-width:0}
+  .field input,.field select{min-width:0;width:100%}
+  .grp{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .num{font-variant-numeric:tabular-nums;text-align:left}
+  .num::placeholder{color:var(--dim);opacity:.8}
+  #clock{display:inline-flex;margin-top:2px;white-space:normal}
+  .detail-lines{display:grid;gap:10px;color:var(--dim);font-size:14px;line-height:1.55}
+  .detail-lines p{margin:0}
+  .coach-muted{color:var(--dim);font-size:14px;line-height:1.6;margin:0 0 12px;overflow-wrap:anywhere}
+  .coach-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px}
+  .coach-field{display:block;color:var(--dim);font-size:14px;margin-bottom:12px}
+  .coach-field>span{display:block;margin-bottom:7px}
+  .coach-field select{width:100%;min-width:0}
+  .coach-confirm{display:flex;align-items:flex-start;gap:12px;min-height:48px;padding:10px 0;color:var(--ink);font-size:14px;line-height:1.6}
+  .coach-confirm input{flex:0 0 24px;width:24px;height:24px;margin:0;accent-color:var(--accent)}
+  .coach-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .coach-actions button{flex:1 1 135px;min-width:0}
+  #coachStart,#coachAsk{color:var(--panel);border-color:var(--accent);background:var(--accent)}
+  html[data-theme="night"] #coachStart,html[data-theme="night"] #coachAsk{color:#06281f}
+  .coach-result{font-size:16px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+  .coach-result p{margin:0 0 12px}
+  .coach-verdict{display:block;margin:10px 0 12px;color:var(--accent);font-size:26px;font-weight:750;line-height:1.35}
+  .coach-warning{color:var(--danger)}
+  .coach-result dl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 12px;margin:0;font-size:14px}
+  .coach-result dt{color:var(--dim)}.coach-result dd{margin:0;font-variant-numeric:tabular-nums}
+  #coachStatus,#coachService,#coachRequestStatus{margin:12px 0 0}
+  #coachRequestStatus:empty,#coachAnswer:empty{display:none}
+  #coachAnswer{margin-top:16px}
+  details>summary{cursor:pointer;min-height:48px;display:flex;align-items:center;gap:8px;font-size:16px;font-weight:700;
+    list-style:none;touch-action:manipulation}
+  details>summary::-webkit-details-marker{display:none}
+  details>summary::after{content:"＋";margin-left:auto;color:var(--accent);font-size:20px}
+  details[open]>summary::after{content:"−"}
+  details[open]>summary{margin-bottom:12px}
+  .coach-settings{border-top:1px solid var(--line);margin-top:14px;padding-top:4px}
+  .dashboard-heading{align-items:flex-start}
+  .dashboard-heading h1{font-size:24px}
+  .dashboard-intro{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;align-items:start}
+  #dashRace{grid-column:1/-1;font-size:18px;font-weight:750;line-height:1.45;overflow-wrap:anywhere}
+  #dashBoat{color:var(--ink);font-size:16px;margin-top:6px;overflow-wrap:anywhere}
+  #dashFresh{color:var(--dim);font-size:13px;text-align:right;align-self:end}
+  .dashboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  .dashboard-grid>.card{margin:0;min-width:0}
+  .dashboard-wide{grid-column:1/-1}
+  .readout-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0}
+  .readout-grid>div{min-width:0}
+  .readout-grid dt{font-size:14px;color:var(--dim);line-height:1.4;margin:0 0 7px}
+  .readout-grid dd{margin:0;color:var(--ink);font-size:32px;font-weight:750;line-height:1.15;letter-spacing:-.02em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+  .readout-grid dd.with-unit{display:flex;align-items:baseline;flex-wrap:nowrap;gap:3px;white-space:nowrap}
+  .readout-grid dd strong{font:inherit}
+  .readout-grid dd .unit{display:inline-block;flex:0 0 auto;font-size:13px;font-weight:600;color:var(--dim);margin-left:0;letter-spacing:0}
+  .readout-grid.position-readouts dd{font-size:clamp(23px,7vw,30px)}
+  .readout-grid.accent dd{color:var(--accent)}
+  .readout-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .info-list{display:grid;gap:14px;margin:0}
+  .info-list>div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:14px;align-items:start}
+  .info-list dt{font-size:14px;color:var(--dim)}
+  .info-list dd{margin:0;font-size:16px;line-height:1.55;overflow-wrap:anywhere}
+  .dashboard-links{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:18px}
+  .sheet{display:none;position:fixed;z-index:60;left:50%;bottom:0;transform:translateX(-50%);width:100%;max-width:600px;
+    max-height:88dvh;overflow:auto;overscroll-behavior:contain;padding:18px 18px calc(20px + env(safe-area-inset-bottom));
+    background:var(--panel);border:1px solid var(--line);border-bottom:0;border-radius:22px 22px 0 0;box-shadow:0 -8px 40px #0003}
+  .sheet.open{display:block}
+  .sheet-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 16px}
+  .sheet-head h2{font-size:22px;margin:0}
+  .sheet-close{min-width:64px}
+  .sheet h4{margin:18px 0 8px;font-size:14px;font-weight:650;color:var(--dim)}
+  .row{display:grid;grid-template-columns:12px minmax(0,1fr) auto auto;gap:9px;align-items:center;
+    padding:12px 0;border-bottom:1px solid var(--line);font-size:16px}
   .row:last-child{border-bottom:0}
-  .dot{width:9px;height:9px;border-radius:99px}
+  .dot{width:10px;height:10px;border-radius:50%}
   .row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .row .v{color:var(--dim);font-variant-numeric:tabular-nums}
-  .row.stale{opacity:.45}
-  #msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);color:var(--dim);
-    text-align:center;line-height:1.9;padding:0 20px}
-  #bias{position:absolute;left:12px;top:12px;max-width:calc(100% - 320px);
-    background:#0d151bcc;border:1px solid var(--line);border-radius:8px;padding:7px 11px;
-    font-size:12px;color:var(--dim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
-    line-height:1.7}
-  #bias b{color:var(--ink);font-weight:600}
-  #bias .fav{color:#0b1116;background:#5ad1a0;border-radius:4px;padding:0 5px;font-weight:600}
-  #bias .dn{color:#ffb4a8}
-  #bias .sep{color:#2b5664;margin:0 6px}
-  .grp{display:flex;align-items:center;gap:4px;color:var(--dim);font-size:12px}
-  .num{background:#13212a;color:var(--ink);border:1px solid var(--line);border-radius:6px;
-    padding:3px 6px;font:inherit;width:62px;font-variant-numeric:tabular-nums;text-align:right}
-  .num:focus{outline:0;border-color:#5ad1a0}
-  .num::placeholder{color:#4d6b74}
-  #listBtn,#cfgBtn{display:none}
-
-  /* ---- 手机 / 窄窗口 ---- */
-  @media (max-width:760px), (pointer:coarse){
-    html,body{font-size:14px}
-    #top{gap:6px;padding:6px 8px;padding-top:calc(6px + env(safe-area-inset-top))}
-    #top b{flex:1 1 0;min-width:0;width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis}
-    button,select{font-size:13px;padding:6px 9px;min-height:32px;border-radius:8px}
-    .pill{font-size:11px;padding:2px 7px}
-    #listBtn,#cfgBtn{display:inline-block;padding:5px 9px}
-    /* 参数收进弹出面板,不占画布高度 */
-    #ctrls{position:absolute;left:8px;right:8px;top:calc(100% + 4px);z-index:30;
-      display:none;flex-wrap:wrap;gap:6px;align-items:center;
-      background:#0d151bf2;border:1px solid var(--line);border-radius:10px;padding:8px;
-      box-shadow:0 10px 30px #0008}
-    #ctrls.open{display:flex}
-    #ctrls select{flex:1 1 40%;max-width:46vw}
-    .num{width:56px;padding:5px 5px;min-height:32px}
-    /* 船表在手机上是底部浮层,默认收起,不挡图 */
-    #list{left:8px;right:8px;width:auto;top:auto;bottom:calc(8px + env(safe-area-inset-bottom));
-      max-height:44%;display:none;border-radius:10px}
-    #list.open{display:block}
-    .row{font-size:13px;padding:5px 0}
-    #bias{left:8px;right:8px;top:8px;max-width:none;font-size:12px;padding:6px 9px;
-      max-height:26%;overflow:auto}
-    #hud{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));gap:10px;font-size:11px}
-    #hud .hint{flex:1 1 100%;order:9}
+  .row .v{color:var(--dim);font-size:14px;font-variant-numeric:tabular-nums}
+  .row.stale .nm,.row.stale .v{color:var(--stale)}
+  #sheetBackdrop{display:none}
+  #sheetBackdrop.open{display:block;position:fixed;inset:0;z-index:50;margin:0;width:100%;height:100%;max-width:none;
+    border:0;border-radius:0;background:#06172180;padding:0}
+  .layer-option{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:58px;
+    border-bottom:1px solid var(--line);font-size:16px}
+  .layer-option input{width:24px;height:24px;margin:0;accent-color:var(--accent);flex-shrink:0}
+  .layer-buttons{display:grid;gap:10px;margin-top:18px}
+  @media(min-width:1000px){
+    #top{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);align-items:center;gap:20px;padding:10px 24px;
+      padding-top:calc(10px + env(safe-area-inset-top))}
+    .top-boat-row{margin:0}
+    #raceDeck,.start-readouts{padding-left:max(0px,calc((100vw - 900px)/2));padding-right:max(0px,calc((100vw - 900px)/2))}
+    #raceDeck{padding-top:18px;padding-bottom:14px}
+    #deckNote{text-align:center}
+    #mobileNav{padding-left:max(10px,calc((100vw - 800px)/2));padding-right:max(10px,calc((100vw - 800px)/2))}
+    #mobileNav button{flex-direction:row;gap:9px;min-height:50px}
+    #startAssist{padding-left:24px;padding-right:24px}
+    #startControls,.start-assist-head,#startHint{max-width:900px;margin-left:auto;margin-right:auto}
   }
+  @media(max-width:600px){
+    .dashboard-grid{grid-template-columns:1fr}
+    .dashboard-wide{grid-column:auto}
+    #startAssist.open #startControls{grid-template-columns:1fr}
+    .start-calibration,.start-adjustments{grid-column:1/-1}
+    .dashboard-links{grid-template-columns:repeat(2,minmax(0,1fr))}
+  }
+  @media(max-width:360px){
+    #top{padding-left:12px;padding-right:12px}.top-race-row{gap:5px}.top-actions{gap:2px}
+    .race-heading{gap:5px}#race{font-size:15px}.pill{padding:4px 6px}
+    .top-boat-row{gap:7px}.boat-picker{gap:7px}#deckFresh{max-width:84px}
+    #raceDeck,#startAssist{padding-left:12px;padding-right:12px}
+    .metric-grid{gap:8px}.metric+.metric{padding-left:8px}.metric strong{font-size:36px}
+    .metric .unit{margin-left:2px}.metric-label{font-size:13px}
+    .start-readouts{gap:8px}.start-readout strong{font-size:32px}
+    .app-page{padding-left:12px;padding-right:12px}.card,.coach-card{padding:15px}
+    .readout-grid{gap:10px}.readout-grid dt{font-size:13px}
+    .page-heading h1,.dashboard-heading h1{font-size:22px}
+    .quick-grid{gap:8px}.quick-grid button{font-size:14px;padding:10px}
+  }
+  @media(max-height:500px) and (orientation:landscape){
+    #top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:16px;
+      padding:4px 14px;padding-top:calc(4px + env(safe-area-inset-top))}
+    .top-boat-row{margin:0}.top-actions .icon-button{border:0}.top-race-row{gap:6px}
+    #raceDeck{padding:8px 16px}.metric-grid{max-width:740px;margin:auto}.metric strong{font-size:36px}
+    .metric-label{margin-bottom:2px}#deckNote{margin-top:5px;font-size:13px;text-align:center}
+    #mobileNav{padding-top:3px;padding-bottom:calc(3px + env(safe-area-inset-bottom))}
+    #mobileNav button{flex-direction:row;gap:7px;min-height:48px;padding:4px}
+    .map-wind{top:10px;left:12px;padding:7px 11px}.map-wind .eyebrow{display:none}
+    .map-actions{top:10px;right:12px;flex-direction:row;gap:8px}#mapWindState{margin-top:0}
+    #startAssist{padding:8px 16px;max-height:52dvh}
+    .start-readouts{float:left;width:58%;gap:14px}.start-readout strong{font-size:32px}
+    .start-assist-head{margin:0 0 0 61%;min-height:48px}.start-assist-head #startSummary{display:none}
+    #startHint{clear:both;margin-top:5px;font-size:13px}
+    #startControls{clear:both}.start-direction{grid-column:auto}#startAssist.open #startControls{grid-template-columns:1fr 1fr}
+    .start-adjustments{grid-column:2}.start-calibration{grid-column:1}
+    .app-page{padding-top:16px}.page-heading{margin-bottom:12px}
+  }
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
-<body>
-<div id="top">
-  <b id="race">正在找比赛…</b>
-  <span id="status" class="pill">—</span>
-  <span class="pill" id="err" style="display:none"></span>
-  <button id="listBtn">船表</button>
-  <button id="cfgBtn">⚙</button>
-  <span id="ctrls">
-    <select id="sel"></select>
-    <select id="round"></select>
-    <button id="follow">自动框住:开</button>
-    <button id="pred">预判线:开</button>
-    <button id="lay">1标layline:开</button>
-    <span class="grp" title="水流的去向:0 = 往北,90 = 往东,180 = 往南,270 = 往西">
-      流
-      <input id="curDir" class="num" type="number" min="0" max="359" step="5" placeholder="°" inputmode="numeric">
-      <input id="curSpd" class="num" type="number" min="0" max="9" step="0.1" placeholder="0.0" inputmode="decimal">
-      <span>kn</span>
-    </span>
-    <span class="pill" id="clock">—</span>
-  </span>
-</div>
-<main>
-  <canvas id="cv"></canvas>
-  <div id="msg">连接中…</div>
-  <div id="bias"></div>
-  <div id="hud">
-    <div><span class="k" id="windTxt">风 —</span></div>
-    <div><span class="k" id="curTxt">流 —</span></div>
-    <div><span class="k" id="layTxt">layline —</span></div>
-    <div><span class="k" id="scaleTxt">—</span></div>
-    <div class="hint" id="hint">滚轮缩放 · 拖动平移 · 双击复位</div>
+<body data-screen="race">
+<header id="top">
+  <div class="top-race-row">
+    <div class="race-heading"><b id="race">正在找比赛…</b><span id="status" class="pill">—</span></div>
+    <div class="top-actions">
+      <button id="dashboardOpen" class="icon-button" type="button" aria-label="Dashboard总览" title="Dashboard 总览"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+      <button id="themeToggle" class="icon-button" type="button" aria-label="切换日间夜间模式" title="切换日间 / 夜间"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2 M12 20v2 M2 12h2 M20 12h2 M5 5l1.5 1.5 M17.5 17.5 19 19 M5 19l1.5-1.5 M17.5 6.5 19 5"/></svg></button>
+    </div>
   </div>
-  <div id="list"><h4>船</h4><div id="boats"></div><h4 style="margin-top:10px">标</h4><div id="marks"></div></div>
+  <div class="top-boat-row">
+    <div class="boat-picker"><label id="deckBoat" for="boatSel">我的船</label><select id="boatSel" aria-label="我的船" title="选择自己的船，查看航程预判"><option value="">选择我的船</option></select></div>
+    <span id="deckFresh">等待数据</span>
+  </div>
+  <div id="mapDataState" role="status" hidden></div>
+  <span class="pill" id="err" style="display:none" role="status"></span>
+</header>
+<main id="mapStage" aria-label="比赛实时地图">
+  <canvas id="cv" aria-label="船位、轨迹与航程预判地图"></canvas>
+  <div id="msg">连接中…</div>
+  <div class="map-wind"><span class="eyebrow">赛场风况</span><strong id="windTxt">风 —</strong><span id="mapWindState">等待风数据</span></div>
+  <div class="map-actions">
+    <button id="mapLayers" class="icon-button" type="button" aria-label="地图图层" aria-expanded="false" aria-controls="layerPanel" title="地图图层"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5"/></svg></button>
+    <button id="mapLocate" class="icon-button" type="button" aria-label="定位本船或全场" aria-pressed="true" title="定位本船 / 全场"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4 M12 18v4 M2 12h4 M18 12h4"/></svg></button>
+  </div>
+  <div id="bias"></div>
+  <div id="hud"><span id="scaleTxt">—</span></div>
+  <div class="map-credits"><span id="mapBaseState" role="status">官网底图加载中…</span><a href="https://www.saill.cn/" target="_blank" rel="noopener noreferrer">© SF-TrajX</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap</a> · <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">© CARTO</a></div>
 </main>
+<section id="raceDeck" aria-label="我的船仪表">
+  <div class="metric-grid">
+    <div class="metric"><span class="metric-label">当前船速</span><strong id="speedValue">—</strong><span class="unit">kn</span></div>
+    <div class="metric prediction"><span class="metric-label">30 秒航程</span><strong id="distance30">—</strong><span class="unit">米</span></div>
+    <div class="metric prediction"><span class="metric-label">1 分钟航程</span><strong id="distance60">—</strong><span class="unit">米</span></div>
+  </div>
+  <p id="deckNote">选择我的船，查看航程预判。</p>
+</section>
+<section id="startAssist" aria-label="手动起航辅助">
+  <div class="start-readouts">
+    <div class="start-readout"><span class="metric-label" id="startCountdownLabel">距手动起航</span><strong id="startCountdown">—:—</strong></div>
+    <div class="start-readout"><span class="metric-label">预计到线</span><strong id="startEta">—</strong></div>
+    <div class="start-readout"><span class="metric-label">到线时间差</span><strong id="startDelta">—</strong></div>
+  </div>
+  <div class="start-assist-head"><button id="startToggle" type="button" aria-expanded="false" aria-controls="startControls">校准与方向</button><span id="startSummary">未校准</span></div>
+  <div id="startControls">
+    <label class="start-direction">起航方向<select id="startDirection" aria-label="起航方向"><option value="">先核对起航方向</option><option value="toward">朝1标一侧</option><option value="away">背离1标一侧</option></select></label>
+    <div class="start-calibration" role="group" aria-label="按起航信号开始或校准倒计时"><button id="startFive" type="button">5分钟</button><button id="startFour" type="button">4分钟</button><button id="startOne" type="button">1分钟</button></div>
+    <div class="start-adjustments" role="group" aria-label="微调或清除起航时间"><button id="startEarlier" type="button">提前1秒</button><button id="startLater" type="button">延后1秒</button><button id="startClear" type="button">清除</button></div>
+  </div>
+  <p id="startHint">按信号校准时间，并核对起航方向。仅作位置参考。</p>
+</section>
+<section id="coachPanel" class="app-page" aria-label="战术分析" hidden>
+  <div class="page-inner">
+    <div class="page-heading"><div><h1>战术分析</h1><p>记录表现，再看数据支持的建议。</p></div><button id="coachClose" type="button">返回地图</button></div>
+    <div class="coach-card">
+      <h3>记录比赛</h3>
+      <p id="coachStatus" class="coach-muted" role="status">尚未开始记录。</p>
+      <div class="coach-actions"><button id="coachStart" type="button">开始记录</button><button id="coachStop" type="button" disabled>结束并分析</button></div>
+      <details class="coach-settings" open><summary>记录范围与迎风确认</summary>
+        <label class="coach-field"><span>记录范围</span><select id="coachScope" aria-label="记录范围"><option value="first_upwind_leg">首个迎风段</option><option value="first_lap">第一圈</option><option value="first_race">第一场</option></select></label>
+        <label class="coach-confirm"><input id="coachConfirm" type="checkbox"><span>确认起航线中点至1标是本次迎风方向</span></label>
+        <p class="coach-muted">三种范围均只比较同时间、相近进度的迎风片段。开始前先核对迎风方向。</p>
+      </details>
+    </div>
+    <details class="coach-card" open><summary>本地统计与比较依据</summary><div id="coachLocal" class="coach-result">尚无统计。结束记录后查看结果。</div></details>
+    <div class="coach-card">
+      <h3>AI 解读</h3><p class="coach-muted">仅发送匿名统计，不传原始坐标或船名。</p>
+      <div class="coach-actions"><button id="coachAsk" type="button" disabled>AI解读这份数据</button></div>
+      <p id="coachService" class="coach-muted" role="status">服务状态待检查。</p><p id="coachRequestStatus" class="coach-muted" role="status"></p><div id="coachAnswer" class="coach-result"></div>
+    </div>
+    <details class="coach-card"><summary>历史报告与导出</summary><label class="coach-field"><span>选择报告</span><select id="coachHistory" aria-label="历史报告"><option value="">当前报告 / 选择历史报告</option></select></label><div class="coach-actions"><button id="coachExport" type="button" disabled>导出摘要</button></div></details>
+  </div>
+</section>
+<section id="morePage" class="app-page" aria-label="更多功能与设置" hidden>
+  <div class="page-inner">
+    <div class="page-heading"><div><h1>更多</h1><p>船队、赛事和显示设置。</p></div><button id="cfgClose" type="button">返回地图</button></div>
+    <div class="card"><h2>快捷操作</h2><div class="quick-grid">
+      <button id="dashboardMore" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard 总览</button>
+      <button id="navBoat" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v13H5l7-13Z M14 7l5 9h-5 M3 19h18l-3 3H6l-3-3Z"/></svg>选择我的船</button>
+      <button id="navList" type="button" aria-expanded="false" aria-controls="list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13 M8 12h13 M8 18h13 M3 6h.1 M3 12h.1 M3 18h.1"/></svg>船队与航标</button>
+      <button id="navFollow" type="button" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5"/><circle cx="12" cy="12" r="3"/></svg><span>回到全场</span></button>
+      <button id="navSettings" type="button" aria-controls="ctrls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16 M4 12h16 M4 19h16"/><circle cx="8" cy="5" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="19" r="2"/></svg>比赛设置</button>
+      <button id="coachOpen" type="button" aria-controls="coachPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5 M4 19h16 M8 15l4-5 4 2 4-7"/></svg>战术分析</button>
+    </div></div>
+    <section id="ctrls" class="card" aria-label="比赛设置">
+      <h2>比赛设置</h2>
+      <div class="control-group"><h3 class="control-title">选择赛事</h3><label class="field">组别<select id="sel" aria-label="组别"></select></label><label class="field">场次<select id="round" aria-label="场次"></select></label></div>
+      <div class="control-group"><h3 class="control-title">视图</h3><button id="follow" type="button">自动框住:开</button></div>
+      <div class="control-group"><h3 class="control-title">手动水流假设</h3><span class="grp" title="水流的去向：0 = 往北，90 = 往东，180 = 往南，270 = 往西"><label class="field">流向 °<input id="curDir" class="num" aria-label="流向" type="number" min="0" max="359" step="5" placeholder="未设置" inputmode="numeric"></label><label class="field">流速 kn<input id="curSpd" class="num" aria-label="流速" type="number" min="0" max="9" step="0.1" placeholder="0.0" inputmode="decimal"></label></span></div>
+      <span class="pill" id="clock">—</span>
+    </section>
+    <details class="card"><summary>数据与预判说明</summary><div class="detail-lines"><p>底图与实时位置来自赛事零距离。按原接口每秒拉取；设备停止上报时保留最后位置并标为已旧，不改写上报时间。</p><a id="officialMapLink" class="source-link" href="https://www.saill.cn/" target="_blank" rel="noopener noreferrer">打开该场官网地图核对</a><p id="predInfo">选择“我的船”查看30秒 / 1分钟航程</p><p id="curTxt">流 —</p><p id="layTxt">layline —</p><p id="hint">拖动平移 · 双指缩放 · 双击复位</p></div></details>
+    <button id="listBtn" type="button" hidden>船表</button><button id="cfgBtn" type="button" hidden>比赛设置</button>
+  </div>
+</section>
+<section id="dashboardPage" class="app-page" aria-label="Dashboard总览" hidden>
+  <div class="page-inner">
+    <div class="page-heading dashboard-heading"><div><h1>Dashboard 总览</h1><p>航行、起航与战术数据集中查看。</p></div></div>
+    <div class="card dashboard-intro"><strong id="dashRace">等待赛事</strong><span id="dashBoat">尚未选择本船</span><span id="dashFresh">等待数据</span></div>
+    <div class="dashboard-grid">
+      <section class="card dashboard-wide"><h2>航行</h2><dl class="readout-grid accent"><div><dt>当前船速</dt><dd class="with-unit"><strong id="dashSpeed">—</strong><span class="unit">kn</span></dd></div><div><dt>30 秒航程</dt><dd class="with-unit"><strong id="dash30">—</strong><span class="unit">米</span></dd></div><div><dt>1 分钟航程</dt><dd class="with-unit"><strong id="dash60">—</strong><span class="unit">米</span></dd></div></dl><p id="dashDataNote" class="card-note">选择本船后查看预判。</p></section>
+      <section class="card dashboard-wide"><h2>比赛位置</h2><dl class="readout-grid position-readouts"><div><dt>距起航线</dt><dd class="with-unit"><strong id="startDistance">—</strong><span class="unit">米</span></dd></div><div><dt>距 1 标</dt><dd class="with-unit"><strong id="markDistance">—</strong><span class="unit">米</span></dd></div><div><dt>向 1 标推进</dt><dd class="with-unit"><strong id="markProgress">—</strong><span class="unit">kn</span></dd></div></dl><p id="dashPositionNote" class="card-note">等待有效船位和航标。</p></section>
+      <section class="card dashboard-wide"><h2>起航</h2><dl class="readout-grid"><div><dt id="dashCountdownLabel">距手动起航</dt><dd id="dashCountdown">—:—</dd></div><div><dt>预计到线</dt><dd id="dashEta">—</dd></div><div><dt>到线时间差</dt><dd id="dashDelta">—</dd></div></dl><p id="dashStartNote" class="card-note">尚未校准起航时间。</p></section>
+      <section class="card"><h2>风与水流</h2><dl class="readout-grid two"><div><dt>风向</dt><dd id="dashWindDirection">—</dd></div><div><dt>风速</dt><dd id="dashWindSpeed">—</dd></div></dl><p id="dashWindAge" class="card-note">等待风数据</p><dl class="info-list" style="margin-top:14px"><div><dt>手动水流</dt><dd id="dashCurrent">未设置</dd></div></dl></section>
+      <section class="card"><h2>船队与连接</h2><dl class="info-list"><div><dt>船队</dt><dd id="dashFleet">等待船队数据</dd></div><div><dt>连接</dt><dd id="dashConnection">连接中…</dd></div></dl></section>
+      <section class="card dashboard-wide"><h2>战术分析</h2><dl class="info-list"><div><dt>记录状态</dt><dd id="dashRecording">尚未开始记录</dd></div><div><dt>记录范围</dt><dd id="dashScope">—</dd></div><div><dt>报告</dt><dd id="dashReport">尚无报告</dd></div><div><dt>比较依据</dt><dd id="dashEvidence">—</dd></div><div><dt>报告时间</dt><dd id="dashReportTime">—</dd></div><div><dt>AI 服务</dt><dd id="dashAIService">服务状态待检查</dd></div></dl><p id="dashReportNote" class="card-note">记录完成后查看本地统计与 AI 解读。</p></section>
+    </div>
+    <div class="dashboard-links" aria-label="从总览切换页面"><button id="dashGoRace" type="button">比赛地图</button><button id="dashGoStart" type="button">起航辅助</button><button id="dashGoTactics" type="button">战术分析</button><button id="dashGoMore" type="button">更多设置</button></div>
+  </div>
+</section>
+<nav id="mobileNav" aria-label="主导航">
+  <button id="navRace" type="button" class="active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v13H5l7-13Z M14 7l5 9h-5 M3 19h18l-3 3H6l-3-3Z"/></svg><span>比赛</span></button>
+  <button id="navStart" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="8"/><path d="M12 10v4l3 2 M9 2h6 M12 2v4 M18 7l2-2"/></svg><span>起航</span></button>
+  <button id="navTactics" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5 M4 19h16 M8 15l4-5 4 2 4-7"/></svg><span>战术</span></button>
+  <button id="navMore" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><span>更多</span></button>
+</nav>
+<section id="list" class="sheet" aria-label="船队列表">
+  <div class="sheet-head"><h2>船队与航标</h2><button id="listClose" class="sheet-close" type="button">完成</button></div>
+  <h4>船 · 速度 · 数据年龄</h4><div id="boats"></div><h4>航标</h4><div id="marks"></div>
+</section>
+<section id="layerPanel" class="sheet" aria-label="地图图层">
+  <div class="sheet-head"><h2>地图图层</h2><button id="layerClose" class="sheet-close" type="button">完成</button></div>
+  <label class="layer-option"><span>船只轨迹</span><input id="layerTrails" type="checkbox" checked></label>
+  <label class="layer-option"><span>其他船名</span><input id="layerLabels" type="checkbox"></label>
+  <label class="layer-option"><span>其他船预判线</span><input id="layerOtherPredictions" type="checkbox"></label>
+  <label class="layer-option"><span>距离网格</span><input id="layerGrid" type="checkbox"></label>
+  <div class="layer-buttons"><button id="pred" type="button">预判线:开</button><button id="lay" type="button">1标layline:关</button><button id="analysisToggle" type="button" aria-pressed="false">起航线详情</button></div>
+</section>
+<button id="sheetBackdrop" type="button" aria-label="关闭面板" tabindex="-1"></button>
 <script src="js/state.js"></script>
 <script src="js/api.js"></script>
 <script src="js/feed.js"></script>
 <script src="js/calc.js"></script>
+<script src="js/tactics.js"></script>
+<script src="js/basemap.js"></script>
 <script src="js/draw.js"></script>
 <script src="js/interact.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/coach-analysis.js"></script>
+<script src="js/coach.js"></script>
+<script src="js/start.js"></script>
+<script src="js/dashboard.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

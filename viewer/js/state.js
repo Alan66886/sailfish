@@ -17,9 +17,13 @@ const S = window.S = {
   races: [], race: null, data: null, anchor: null,
   dev: new Map(),        // key -> {name,kind,color,lat,lng,hdg,spd,ts,rx}
   hist: new Map(),       // key -> [{t,x,y}]
-  view: { k: 1, cx: 0, cy: 0, follow: true },
+  view: { k: 1, cx: 0, cy: 0, follow: true, mode: 'fleet' },
+  screen: 'race', theme: 'day',
+  layers: { trails: true, labels: false, otherPredictions: false, grid: false },
   showPred: true,
-  showLay: true,
+  focusBoat: '', boatOptions: null,
+  startAt: null, startDirection: '', startOpen: false,
+  showLay: false,
   pollMs: 1000, lastPoll: 0, polls: 0, errors: 0,
   lastMeta: null, log: [],
   wind: null,
