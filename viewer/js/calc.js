@@ -9,6 +9,12 @@
 const PRED_SEC = 120;          // 往前看两分钟
 const PRED_STEP = 3;           // 每 3 秒算一次
 const DRIFT_TAU = 25;          // 漂移追上来要多久(秒)
+const PRED_MAX_AGE_MS = 30000;
+
+function predictionFresh(dv, now) {
+  return Number.isFinite(dv.ts) && dv.ts > 0
+    && now >= dv.ts && now - dv.ts <= PRED_MAX_AGE_MS;
+}
 
 function predict(dv, seconds) {
   // 最近 8 帧只拿来兜底(没有上报航向/停船),不做平均
@@ -40,12 +46,15 @@ function predict(dv, seconds) {
   }
 
   const pts = [];
-  let x = p.x, y = p.y;
+  let x = p.x, y = p.y, distance = 0;
   for (let t = PRED_STEP; t <= seconds + 1e-9; t += PRED_STEP) {
     const ramp = hasCur ? 1 - Math.exp(-t / DRIFT_TAU) : 0;
-    x += (vx + cvx * ramp) * PRED_STEP;
-    y += (vy + cvy * ramp) * PRED_STEP;
-    pts.push({ x, y, t });
+    const dx = (vx + cvx * ramp) * PRED_STEP;
+    const dy = (vy + cvy * ramp) * PRED_STEP;
+    x += dx;
+    y += dy;
+    distance += Math.hypot(dx, dy);   // 航程沿曲线累计，不是起终点直线距离
+    pts.push({ x, y, t, distance });
   }
   return { bearing, speed, start: p, pts, hasCur };
 }
@@ -136,27 +145,38 @@ function updateBias() {
 function drawStart() {
   const b = S.bias;
   if (!b) return;
+  const palette = drawPalette(), now = nowMs();
+  const stale = mapDeviceStale(b.A, now) || mapDeviceStale(b.B, now);
+  const windFresh = b.windAge !== null && b.windAge >= 0 && b.windAge <= 60000;
+  const color = stale ? palette.stale : palette.start;
   const a = toScreen(b.pa), c = toScreen(b.pb);
   ctx.setLineDash([]);
-  ctx.strokeStyle = 'rgba(111,179,255,.85)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = palette.outline; ctx.lineWidth = 7;
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+  ctx.setLineDash(stale ? [8, 6] : []);
+  ctx.strokeStyle = color; ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+  ctx.setLineDash([]);
   for (const [p, which] of [[a, 'A'], [c, 'B']]) {
-    const fav = b.fav === which;
-    ctx.fillStyle = fav ? '#5ad1a0' : '#6fb3ff';
-    ctx.beginPath(); ctx.arc(p.x, p.y, fav ? 6 : 5, 0, Math.PI * 2); ctx.fill();
+    if (!mapVisible(p, 12)) continue;
+    const fav = !stale && windFresh && b.fav === which;
+    ctx.fillStyle = fav ? palette.favored : color;
+    ctx.strokeStyle = palette.outline; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     if (fav) {
-      ctx.strokeStyle = 'rgba(90,209,160,.8)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = palette.favored; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 13, 0, Math.PI * 2); ctx.stroke();
     }
-    label('起航线' + which + (fav ? ' ↑上风' : ''), p.x + 9, p.y - 7, fav ? '#5ad1a0' : '#9fc8ff');
+    label('起航 ' + which + (stale ? ' · 旧' : ''), p.x + 12, p.y - 12,
+      stale ? palette.staleText : palette.start, { size: mapLabelSize() });
   }
-  if (b.windFrom !== null) {
+  // 简洁视图不铺额外风轴；名称图层或起航面板开启时仍保留。
+  if (b.windFrom !== null && windFresh && !stale && (mapLayers().labels || S.startOpen)) {
     const m = toScreen(b.mid);
     const u = { x: Math.sin(b.windFrom * D2R), y: -Math.cos(b.windFrom * D2R) };
     const L = 110;
     ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = 'rgba(111,179,255,.5)'; ctx.lineWidth = 1.3;
+    ctx.strokeStyle = palette.wind; ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(m.x - u.x * L, m.y - u.y * L);
     ctx.lineTo(m.x + u.x * L, m.y + u.y * L);
@@ -165,7 +185,7 @@ function drawStart() {
     const ex = m.x + u.x * L, ey = m.y + u.y * L;
     const ang = Math.atan2(u.x, -u.y);
     ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(111,179,255,.8)';
+    ctx.fillStyle = palette.wind;
     ctx.beginPath();
     ctx.moveTo(ex, ey);
     ctx.lineTo(ex - Math.sin(ang - .4) * 9, ey + Math.cos(ang - .4) * 9);
@@ -241,12 +261,15 @@ function laylines() {
 }
 
 function drawLaylines() {
-  if (!S.showLay) return;
+  if (!S.showLay) { el('layTxt').textContent = '1标 layline 关'; return; }
   const L = laylines();
   if (!L) { el('layTxt').textContent = 'layline —'; return; }
+  const palette = drawPalette(), now = nowMs();
+  const referenceMarks = [mark1(), ...(startEnds() || [markByName(/^4s$/i), markByName(/^4p$/i)])];
+  const stale = referenceMarks.some(mark => mapDeviceStale(mark, now));
   const m = toScreen(L.pm);
   el('layTxt').textContent = `layline ${LAY_TWA}° · 轴 ${L.axis.toFixed(0)}°(标位)`
-    + (L.hasCur ? ` · 按 ${(L.s * KNOT).toFixed(1)} kn` : '');
+    + (L.hasCur ? ` · 按 ${(L.s * KNOT).toFixed(1)} kn` : '') + (stale ? ' · 标位已旧' : '');
 
   // 从标往画布边上走,标注放在边上往回一点
   const edge = (dx, dy, back) => {
@@ -263,20 +286,21 @@ function drawLaylines() {
 
   for (const ln of L.lines) {
     const ua = edge(-ln.ux, -ln.uy, 96);           // 紫色:layline
-    ctx.setLineDash([5, 5]); ctx.lineWidth = 1.4;
-    ctx.strokeStyle = 'rgba(199,155,255,.55)';
+    ctx.setLineDash([6, 6]); ctx.lineWidth = 1.8;
+    ctx.strokeStyle = stale ? palette.stale : palette.lay;
     ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(ua.end.x, ua.end.y); ctx.stroke();
     ctx.setLineDash([]);
-    label(`1标 ${ln.side} ${LAY_TWA}°`, ua.at.x - 30, ua.at.y + 4, C_LAY);
+    label(`1标 ${ln.side} ${LAY_TWA}°`, ua.at.x - 30, ua.at.y + 4,
+      stale ? palette.staleText : palette.lay);
 
     if (!L.hasCur) continue;
     const uc = edge(-ln.gx, -ln.gy, 190);          // 橙色:有流时实际要对的路径
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(255,159,67,.85)';
+    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = stale ? palette.stale : palette.actual;
     ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(uc.end.x, uc.end.y); ctx.stroke();
     const txt = Math.abs(ln.d) < 0.5 ? '实际路径 没变'
       : `实际路径 跑${ln.hi} ${Math.abs(ln.d).toFixed(0)}°`;
-    label(txt, uc.at.x - 52, uc.at.y + 4, C_ACT);
+    label(txt, uc.at.x - 52, uc.at.y + 4, stale ? palette.staleText : palette.actual);
   }
 }
 

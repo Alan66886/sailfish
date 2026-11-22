@@ -191,6 +191,7 @@ async function loadRounds(levelCd, wantCd) {
 }
 
 function selectRace(cd) {
+  resetCoachForRace();
   S.gen = (S.gen || 0) + 1;
   const lvCd = el('sel').value;
   const lv = S.races.find(r => r.levelCd === lvCd) || {};
@@ -201,7 +202,12 @@ function selectRace(cd) {
     frontStatus: rd.frontStatus,
   };
   S.dev.clear(); S.hist.clear(); S.anchor = null; S.data = null; S.wind = null;
+  S.focusBoat = '';
+  S.startAt = null; S.startDirection = '';
+  el('startDirection').value = '';
+  updateBoatPicker();
   S.view.follow = true;
+  S.view.mode = 'fleet'; S.view.fitNow = true;
   el('follow').textContent = '自动框住:开';
   el('race').textContent = [lv.levelName, S.race.roundName].filter(Boolean).join(' · ') || '比赛';
   setPill(el('status'), '读…', 'pill');
